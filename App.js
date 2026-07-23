@@ -43,20 +43,72 @@ const emptyEntry = {
   category: "",
   name: "",
   note: "",
-  type: "expense"
+  type: "expense",
+  date: ""
 };
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function parseDate(value) {
+  const text = String(value || "").trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return text;
+  }
+
+  const brMatch = /^([0-3]\d)\/([0-1]\d)\/(\d{4})$/.exec(text);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  }
+
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return today();
+}
+
+function getMonthKey(value) {
+  const date = new Date(parseDate(value));
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(parseDate(value));
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(date);
+}
+
+function formatMonthLabel(value) {
+  const date = new Date(parseDate(value));
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("home");
   const [transactions, setTransactions] = useState([]);
   const [investments, setInvestments] = useState([]);
-  const [goal, setGoal] = useState({ target: 0 });
+  const [goal, setGoal] = useState({ target: 0, lazerBudget: 0 });
   const [messages, setMessages] = useState(initialMessages);
   const [prompt, setPrompt] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [modalMode, setModalMode] = useState(null);
   const [entry, setEntry] = useState(emptyEntry);
-  const [goalDraft, setGoalDraft] = useState({ target: "" });
+  const [goalDraft, setGoalDraft] = useState({ target: "", lazerBudget: "" });
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -87,14 +139,28 @@ export default function App() {
     const invested = investments.reduce((total, item) => total + item.amount, 0);
     const applied = applications + invested;
 
+    const currentMonthKey = getMonthKey(today());
+    const currentMonthLazer = transactions
+      .filter((item) => item.type === "expense" && getMonthKey(item.date || today()) === currentMonthKey)
+      .filter((item) => item.category?.trim().toLowerCase() === "lazer")
+      .reduce((total, item) => total + item.amount, 0);
+    const currentMonthExpenses = transactions
+      .filter((item) => item.type === "expense" && getMonthKey(item.date || today()) === currentMonthKey)
+      .reduce((total, item) => total + item.amount, 0);
+
     return {
       applications,
       applied,
       available: income - expenses - applications,
+      currentMonthExpenses,
+      currentMonthLabel: formatMonthLabel(today()),
+      currentMonthLazer,
       expenses,
       goalPercent: goal.target > 0 ? Math.min(100, Math.round((applied / goal.target) * 100)) : 0,
       income,
       invested,
+      lazerBudget: goal.lazerBudget,
+      lazerRemaining: goal.lazerBudget > 0 ? Math.max(0, goal.lazerBudget - currentMonthLazer) : 0,
       netWorth: income - expenses + invested
     };
   }, [goal, investments, transactions]);
@@ -107,7 +173,10 @@ export default function App() {
         const parsed = JSON.parse(saved);
         setTransactions(parsed.transactions || []);
         setInvestments(parsed.investments || []);
-        setGoal({ target: parsed.goal?.target || 0 });
+        setGoal({
+          target: parsed.goal?.target || 0,
+          lazerBudget: parsed.goal?.lazerBudget || 0
+        });
         setMessages(parsed.messages?.length ? parsed.messages : initialMessages);
       }
     } catch (error) {
@@ -122,7 +191,8 @@ export default function App() {
     setModalMode(nextMode);
     setEntry({
       ...emptyEntry,
-      type: nextMode === "investment" ? "investment" : "expense"
+      type: nextMode === "investment" ? "investment" : "expense",
+      date: today()
     });
   }
 
@@ -130,7 +200,8 @@ export default function App() {
     setModalMode("transaction");
     setEntry({
       ...item,
-      amount: formatInputAmount(item.amount)
+      amount: formatInputAmount(item.amount),
+      date: item.date || today()
     });
   }
 
@@ -139,7 +210,8 @@ export default function App() {
     setEntry({
       ...item,
       amount: formatInputAmount(item.amount),
-      type: "investment"
+      type: "investment",
+      date: item.date || today()
     });
   }
 
@@ -165,7 +237,8 @@ export default function App() {
         amount,
         category: entry.category.trim() || "Carteira",
         name,
-        note: entry.note.trim()
+        note: entry.note.trim(),
+        date: parseDate(entry.date)
       };
       setInvestments((current) =>
         entry.id ? current.map((item) => (item.id === entry.id ? investment : item)) : [investment, ...current]
@@ -177,7 +250,8 @@ export default function App() {
         category: entry.category.trim() || getDefaultCategory(entry.type),
         name,
         note: entry.note.trim(),
-        type: entry.type
+        type: entry.type,
+        date: parseDate(entry.date)
       };
       setTransactions((current) =>
         entry.id ? current.map((item) => (item.id === entry.id ? transaction : item)) : [transaction, ...current]
@@ -204,7 +278,8 @@ export default function App() {
 
   function saveGoal() {
     setGoal({
-      target: parseCurrency(goalDraft.target)
+      target: parseCurrency(goalDraft.target),
+      lazerBudget: parseCurrency(goalDraft.lazerBudget)
     });
     closeModal();
   }
@@ -349,6 +424,15 @@ function HomeScreen({ goal, onGoalPress, summary, transactions }) {
         <MetricCard detail="cadastrado por voce" tone="bad" title="Gastos do mes" value={formatCurrency(summary.expenses)} />
         <MetricCard detail="entradas - gastos" tone={summary.available >= 0 ? "good" : "bad"} title="Disponivel" value={formatCurrency(summary.available)} />
       </View>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Lazer em {summary.currentMonthLabel}</Text>
+        <Text style={styles.metric}>{formatCurrency(summary.currentMonthLazer)}</Text>
+        <Text style={[styles.muted, summary.lazerBudget > 0 ? styles.good : null]}>
+          {summary.lazerBudget > 0
+            ? `Meta: ${formatCurrency(summary.lazerBudget)} • Restante: ${formatCurrency(summary.lazerRemaining)}`
+            : "Defina um orçamento mensal de lazer nas metas."}
+        </Text>
+      </View>
 
       <SectionTitle title="IA percebeu" />
       <Insight
@@ -396,6 +480,30 @@ function SpendingScreen({ onEdit, transactions }) {
   const income = transactions.filter((item) => item.type === "income");
   const applications = transactions.filter((item) => item.type === "application");
 
+  const months = transactions.reduce((acc, item) => {
+    const monthKey = getMonthKey(item.date || today());
+    const monthLabel = formatMonthLabel(item.date || today());
+
+    if (!acc[monthKey]) {
+      acc[monthKey] = {
+        monthKey,
+        monthLabel,
+        items: [],
+        expenseTotal: 0
+      };
+    }
+
+    acc[monthKey].items.push(item);
+
+    if (item.type === "expense") {
+      acc[monthKey].expenseTotal += item.amount;
+    }
+
+    return acc;
+  }, {});
+
+  const monthGroups = Object.values(months).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+
   return (
     <View>
       <ScreenTop title="Gastos" subtitle="Toque em um item para editar ou apagar" />
@@ -410,10 +518,20 @@ function SpendingScreen({ onEdit, transactions }) {
           <Text style={styles.chipText}>Aplicados {applications.length}</Text>
         </View>
       </View>
-      {transactions.length ? (
-        <View style={styles.card}>
-          {transactions.map((item) => (
-            <TransactionItem key={item.id} item={item} onPress={() => onEdit(item)} />
+      {monthGroups.length ? (
+        <View>
+          {monthGroups.map((group) => (
+            <View key={group.monthKey} style={styles.monthGroup}>
+              <View style={styles.monthHeader}>
+                <Text style={styles.monthTitle}>{group.monthLabel}</Text>
+                <Text style={styles.muted}>Gastos {formatCurrency(group.expenseTotal)}</Text>
+              </View>
+              <View style={styles.card}>
+                {group.items.map((item) => (
+                  <TransactionItem key={item.id} item={item} onPress={() => onEdit(item)} />
+                ))}
+              </View>
+            </View>
           ))}
         </View>
       ) : (
@@ -552,9 +670,15 @@ function EntryModal({ entry, modalMode, onChange, onClose, onDelete, onSave }) {
             value={entry.amount}
           />
           <Field
+            label="Data"
+            onChangeText={(date) => onChange({ ...entry, date })}
+            placeholder="AAAA-MM-DD"
+            value={entry.date}
+          />
+          <Field
             label={isInvestment ? "Tipo" : "Categoria"}
             onChangeText={(category) => onChange({ ...entry, category })}
-            placeholder={isInvestment ? "Renda fixa, ETF, acao..." : "Moradia, comida, renda..."}
+            placeholder={isInvestment ? "Renda fixa, ETF, acao..." : "Moradia, comida, lazer..."}
             value={entry.category}
           />
           <Field
@@ -598,6 +722,13 @@ function GoalModal({ goalDraft, modalMode, onChange, onClose, onSave }) {
             onChangeText={(target) => onChange({ ...goalDraft, target })}
             placeholder="0,00"
             value={goalDraft.target}
+          />
+          <Field
+            keyboardType="decimal-pad"
+            label="Orcamento mensal de lazer"
+            onChangeText={(lazerBudget) => onChange({ ...goalDraft, lazerBudget })}
+            placeholder="0,00"
+            value={goalDraft.lazerBudget}
           />
           <Pressable onPress={onSave} style={[styles.actionButton, styles.saveButton]}>
             <Text style={styles.saveText}>Salvar meta</Text>
@@ -662,7 +793,7 @@ function TransactionItem({ item, onPress }) {
       </View>
       <View style={styles.itemBody}>
         <Text style={styles.itemTitle}>{item.name}</Text>
-        <Text style={styles.muted}>{item.category}</Text>
+        <Text style={styles.muted}>{item.category} · {formatDate(item.date)}</Text>
       </View>
       <Text style={[styles.itemTitle, isIncome || isApplication ? styles.good : styles.bad]}>
         {isIncome ? "+" : isApplication ? ">" : "-"} {formatCurrency(item.amount)}
@@ -1014,6 +1145,20 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: "#fff8ea"
+  },
+  monthGroup: {
+    marginBottom: 18
+  },
+  monthHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8
+  },
+  monthTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "900"
   },
   listItem: {
     alignItems: "center",
