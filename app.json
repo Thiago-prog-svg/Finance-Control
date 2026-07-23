@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Clara Finance",
+    "slug": "clara-finance",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "clarafinance",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.clarafinance.app"
+    },
+    "android": {
+      "package": "com.clarafinance.app"
+    },
+    "extra": {
+      "openAiModel": "gpt-5"
+    }
+  }
+}
