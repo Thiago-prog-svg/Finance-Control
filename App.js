@@ -487,9 +487,13 @@ function HomeScreen({ goal, onGoalPress, summary, transactions }) {
 }
 
 function SpendingScreen({ onEdit, transactions }) {
-  const expenses = transactions.filter((item) => item.type === "expense");
-  const income = transactions.filter((item) => item.type === "income");
-  const applications = transactions.filter((item) => item.type === "application");
+  const currentMonthKey = getMonthKey(today());
+  const currentMonthTransactions = transactions.filter(
+    (item) => getMonthKey(item.date || today()) === currentMonthKey
+  );
+  const expenses = currentMonthTransactions.filter((item) => item.type === "expense");
+  const income = currentMonthTransactions.filter((item) => item.type === "income");
+  const applications = currentMonthTransactions.filter((item) => item.type === "application");
 
   const months = transactions.reduce((acc, item) => {
     const monthKey = getMonthKey(item.date || today());
@@ -520,7 +524,7 @@ function SpendingScreen({ onEdit, transactions }) {
       <ScreenTop title="Gastos" subtitle="Toque em um item para editar ou apagar" />
       <View style={styles.chips}>
         <View style={[styles.chip, styles.chipActive]}>
-          <Text style={[styles.chipText, styles.chipTextActive]}>Gastos {expenses.length}</Text>
+          <Text style={[styles.chipText, styles.chipTextActive]}>Gastos do mes {expenses.length}</Text>
         </View>
         <View style={styles.chip}>
           <Text style={styles.chipText}>Entradas {income.length}</Text>
