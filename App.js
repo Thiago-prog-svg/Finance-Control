@@ -51,6 +51,11 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function toLocalDate(value) {
+  const [year, month, day] = parseDate(value).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function parseDate(value) {
   const text = String(value || "").trim();
 
@@ -72,17 +77,14 @@ function parseDate(value) {
 }
 
 function getMonthKey(value) {
-  const date = new Date(parseDate(value));
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  return parseDate(value).slice(0, 7);
 }
 
 function formatDate(value) {
   if (!value) {
     return "";
   }
-  const date = new Date(parseDate(value));
+  const date = toLocalDate(value);
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",
@@ -91,7 +93,7 @@ function formatDate(value) {
 }
 
 function formatMonthLabel(value) {
-  const date = new Date(parseDate(value));
+  const date = toLocalDate(value);
   return new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric"
@@ -127,6 +129,10 @@ export default function App() {
   }, [goal, investments, messages, transactions, isReady]);
 
   const summary = useMemo(() => {
+    const currentMonthKey = getMonthKey(today());
+    const currentMonthTransactions = transactions.filter(
+      (item) => getMonthKey(item.date || today()) === currentMonthKey
+    );
     const income = transactions
       .filter((item) => item.type === "income")
       .reduce((total, item) => total + item.amount, 0);
@@ -139,19 +145,24 @@ export default function App() {
     const invested = investments.reduce((total, item) => total + item.amount, 0);
     const applied = applications + invested;
 
-    const currentMonthKey = getMonthKey(today());
-    const currentMonthLazer = transactions
-      .filter((item) => item.type === "expense" && getMonthKey(item.date || today()) === currentMonthKey)
+    const currentMonthIncome = currentMonthTransactions
+      .filter((item) => item.type === "income")
+      .reduce((total, item) => total + item.amount, 0);
+    const currentMonthApplications = currentMonthTransactions
+      .filter((item) => item.type === "application")
+      .reduce((total, item) => total + item.amount, 0);
+    const currentMonthLazer = currentMonthTransactions
+      .filter((item) => item.type === "expense")
       .filter((item) => item.category?.trim().toLowerCase() === "lazer")
       .reduce((total, item) => total + item.amount, 0);
-    const currentMonthExpenses = transactions
-      .filter((item) => item.type === "expense" && getMonthKey(item.date || today()) === currentMonthKey)
+    const currentMonthExpenses = currentMonthTransactions
+      .filter((item) => item.type === "expense")
       .reduce((total, item) => total + item.amount, 0);
 
     return {
       applications,
       applied,
-      available: income - expenses - applications,
+      available: currentMonthIncome - currentMonthExpenses - currentMonthApplications,
       currentMonthExpenses,
       currentMonthLabel: formatMonthLabel(today()),
       currentMonthLazer,
@@ -303,7 +314,7 @@ export default function App() {
 
     const context = {
       available: summary.available,
-      expenses: summary.expenses,
+      expenses: summary.currentMonthExpenses,
       income: summary.income,
       invested: summary.applied
     };
@@ -421,7 +432,7 @@ function HomeScreen({ goal, onGoalPress, summary, transactions }) {
       </View>
 
       <View style={styles.grid}>
-        <MetricCard detail="cadastrado por voce" tone="bad" title="Gastos do mes" value={formatCurrency(summary.expenses)} />
+        <MetricCard detail={summary.currentMonthLabel} tone="bad" title="Gastos do mes" value={formatCurrency(summary.currentMonthExpenses)} />
         <MetricCard detail="entradas - gastos" tone={summary.available >= 0 ? "good" : "bad"} title="Disponivel" value={formatCurrency(summary.available)} />
       </View>
       <View style={styles.card}>
